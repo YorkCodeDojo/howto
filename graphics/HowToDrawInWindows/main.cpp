@@ -1,10 +1,12 @@
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
+#include <memory>
 
 using namespace Gdiplus;
 #pragma comment (lib,"Gdiplus.lib")
 
+std::shared_ptr<Bitmap> spBitmap;
 VOID OnPaint(HDC hdc)
 {
     Graphics graphics(hdc);
@@ -12,9 +14,31 @@ VOID OnPaint(HDC hdc)
 
     graphics.Clear(Color::WhiteSmoke);
 
+    // Lock the bitmap with the same format, to avoid translation, draw a green line on it, and copy it to the screen.
+    if (spBitmap)
+    {
+        BitmapData data;
+        spBitmap->LockBits(nullptr, ImageLockModeRead | ImageLockModeWrite, PixelFormat32bppPARGB, &data);
+
+        for (UINT y = 0; y < data.Height; y++)
+        {
+            auto x = y; //for (auto x = 0; x < data.Width; x++)
+            {
+                // Pixel Maths.... step down by the x stride to the row, then across to the pixel
+                // We work in 4 byte pieces, because each pixel is ARGB
+                uint32_t* pPixel = (uint32_t*)((uint8_t*)data.Scan0 + (y * data.Stride) + (x * 4));
+                *pPixel = 0xFF00FF00;
+            }
+        }
+        spBitmap->UnlockBits(&data);
+        graphics.DrawImage(spBitmap.get(), 0, 0);
+    }
     Pen linePen(Color::DarkRed);
     linePen.SetWidth(2);
 
+    //Bitmap bmp(100, 100, &graphics);
+    //bmp.LockBits(nullptr, 0, )
+    //graphics.Draw
     graphics.DrawLine(&linePen, 10, 10, 200, 200);
     graphics.DrawRectangle(&linePen, 100, 10, 200, 200);
 }
@@ -68,7 +92,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, PSTR, INT iCmdShow)
     }
 
     GdiplusShutdown(gdiplusToken);
-    return msg.wParam;
+    return int(msg.wParam);
 }  // WinMain
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message,
@@ -79,12 +103,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message,
 
     switch (message)
     {
+    case WM_SIZE:
+        spBitmap = std::make_shared<Bitmap>(LOWORD(lParam), HIWORD(lParam), PixelFormat32bppPARGB);
+        return 0;
     case WM_PAINT:
         hdc = BeginPaint(hWnd, &ps);
         OnPaint(hdc);
         EndPaint(hWnd, &ps);
         return 0;
     case WM_DESTROY:
+        spBitmap.reset();
         PostQuitMessage(0);
         return 0;
     default:
